@@ -33,31 +33,6 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
-
-/* Private variables ---------------------------------------------------------*/
-
-/* USER CODE BEGIN PV */
-#define RX_SETTING_MODE 0x18FFBB33
-#define TX_SETTING_MODE 0x18FFCC33
-#define OFFSET_PERIOD_TRANSMIT 1
-#define SEMPLING_SENSDATA_LOAD_UNLOAD 20
-
-#define MIN_OFFSET_SENS_DATA 0
-#define MAX_OFFSET_SENS_DATA 32000
-#define MIN_OFFSET_WEIGHT 1
-#define MAX_OFFSET_WEIGHT 64000
-
 typedef enum {
 	WORK, SETTING
 } SwitchState;
@@ -139,6 +114,31 @@ typedef struct {
 
 } strSensorData;
 #pragma pack()
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+extern uint32_t _app_addr;
+
+#define RX_SETTING_MODE 0x18FFBB33
+#define TX_SETTING_MODE 0x18FFCC33
+#define OFFSET_PERIOD_TRANSMIT 1
+#define SEMPLING_SENSDATA_LOAD_UNLOAD 20
+
+#define MIN_OFFSET_SENS_DATA 0
+#define MAX_OFFSET_SENS_DATA 32000
+#define MIN_OFFSET_WEIGHT 1
+#define MAX_OFFSET_WEIGHT 64000
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+
+/* USER CODE BEGIN PV */
 
 float temperatureOut = 0;
 int16_t outputLoadCell = 0;
@@ -176,7 +176,8 @@ uint16_t calculationWeight(int16_t rawSensData, strSensorData sensorData);
  */
 int main(void) {
 	/* USER CODE BEGIN 1 */
-
+	SCB->VTOR = (uint32_t) &_app_addr;
+	__enable_irq();
 	/* USER CODE END 1 */
 
 	/* MCU Configuration--------------------------------------------------------*/
@@ -407,28 +408,23 @@ void SystemClock_Config(void) {
 }
 
 /* USER CODE BEGIN 4 */
-int16_t deltaSensDataMax;
-int16_t actDeltaSensData;
-int16_t tresholdMin;
-int16_t tresholdMax;
-int16_t output;
 uint16_t calculationWeight(int16_t rawSensData, strSensorData sensorData) {
-	deltaSensDataMax = sensorData.LoadSensData - sensorData.UnloadSensData;
+	int16_t deltaSensDataMax = sensorData.LoadSensData - sensorData.UnloadSensData;
 
 	if (deltaSensDataMax < 0) {
 		deltaSensDataMax = -deltaSensDataMax;
 	}
 
-	actDeltaSensData = rawSensData - sensorData.UnloadSensData;
+	int16_t actDeltaSensData = rawSensData - sensorData.UnloadSensData;
 
 	if (actDeltaSensData < 0) {
 		actDeltaSensData = -actDeltaSensData;
 	}
 
-	tresholdMin = sensorData.OffsetUnloadSensData;
-	tresholdMax = deltaSensDataMax - sensorData.OffsetLoadSensData;
+	int16_t tresholdMin = sensorData.OffsetUnloadSensData;
+	int16_t tresholdMax = deltaSensDataMax - sensorData.OffsetLoadSensData;
 
-	output = (int16_t) ((int32_t) sensorData.WeightMax * (actDeltaSensData - tresholdMin) / (tresholdMax - tresholdMin));
+	int16_t output = (int16_t) ((int32_t) sensorData.WeightMax * (actDeltaSensData - tresholdMin) / (tresholdMax - tresholdMin));
 
 	if (output < 0) {
 		output = 0;
