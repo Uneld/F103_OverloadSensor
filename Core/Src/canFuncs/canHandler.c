@@ -47,9 +47,7 @@ uint32_t canTXMessage(uint32_t IDE, uint32_t ID, uint32_t RTR, uint32_t DLC, uin
  *@error return 1 - CAN not start
  */
 uint32_t canStart() {
-
-	uint32_t hal_ok = HAL_CAN_Start(&hcan);
-	return hal_ok;
+	return HAL_CAN_Start(&hcan);
 }
 
 /**
@@ -99,14 +97,7 @@ uint32_t canSetHWFlt(uint32_t IDE, uint32_t fltrNum, uint32_t FIFO, uint32_t fil
 
 //CAN_RX_FIFO0
 //CAN_RX_FIFO1
-uint8_t canRxMessage(uint32_t RxFifo, CAN_RxHeaderTypeDef* pRxHeader, uint8_t* rxData) {
-//	static uint8_t rxData[8] = { };
-//	static CAN_RxHeaderTypeDef pRxHeader;
-
-	if (HAL_CAN_GetRxMessage(&hcan, RxFifo, pRxHeader, rxData) != HAL_OK) { //configure CAN filter
-		return 1;
-	}
-
-	return 0;
+uint8_t canRxMessage(uint32_t RxFifo, CAN_RxHeaderTypeDef *pRxHeader, uint8_t *rxData) {
+	return HAL_CAN_GetRxMessage(&hcan, RxFifo, pRxHeader, rxData);
 }
 
