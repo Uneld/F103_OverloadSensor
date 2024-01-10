@@ -133,8 +133,8 @@ typedef struct {
 	uint8_t PeriodTransmitType;
 	int16_t UnloadSensData;
 	int16_t LoadSensData;
-	int16_t OffsetUnloadSensData;
-	int16_t OffsetLoadSensData;
+	uint16_t OffsetUnloadSensData;
+	uint16_t OffsetLoadSensData;
 	uint16_t WeightMax;
 
 } strSensorData;
@@ -162,7 +162,7 @@ strSensorData sensorData;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+uint16_t calculationWeight(int16_t rawSensData, strSensorData sensorData);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -205,18 +205,26 @@ int main(void) {
 	errCodeStrtCAN = canStart();
 	init_conversion_tempSensor();
 	sensorData.TxCanID.CanID = 0x1CE75516;
+
+	sensorData.WeightMax = 1000;
+	sensorData.OffsetLoadSensData = 400;
+	sensorData.OffsetUnloadSensData = 300;
+	sensorData.LoadSensData = 8300;
+	sensorData.UnloadSensData = -735;
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1) {
+		temperatureOut = proc_tempSensor();
+		outputLoadCell = proc_hx711_getValue();
+
+		outCanData.Data.DataRaw = outputLoadCell;
+		outCanData.Data.Temperature = temperatureOut;
+
 		switch (switchMain) {
 		case WORK:
-			temperatureOut = proc_tempSensor();
-			outputLoadCell = proc_hx711_getValue();
-
-			outCanData.Data.DataRaw = outputLoadCell;
-			outCanData.Data.Temperature = temperatureOut;
+			outCanData.Data.DataWeight = calculationWeight(outputLoadCell, sensorData);
 
 			errCodeTxCAN = canTXMessage(CAN_EXT, sensorData.TxCanID.CanID, 0, 8, outCanData.RawData);
 
@@ -284,7 +292,7 @@ int main(void) {
 				break;
 			case SET_WITHOUT_LOAD:
 				for (uint8_t i = 0; i < SEMPLING_SENSDATA_LOAD_UNLOAD; ++i) {
-					sensorData.UnloadSensData = proc_hx711_getValue();
+					sensorData.UnloadSensData = outCanData.Data.DataRaw;
 				}
 
 				settingTxBuff.CMD = SET_WITHOUT_LOAD;
@@ -292,7 +300,7 @@ int main(void) {
 				break;
 			case SET_WITH_LOAD:
 				for (uint8_t i = 0; i < SEMPLING_SENSDATA_LOAD_UNLOAD; ++i) {
-					sensorData.LoadSensData = proc_hx711_getValue();
+					sensorData.LoadSensData = outCanData.Data.DataRaw;
 				}
 
 				settingTxBuff.CMD = SET_WITH_LOAD;
@@ -399,6 +407,35 @@ void SystemClock_Config(void) {
 }
 
 /* USER CODE BEGIN 4 */
+int16_t deltaSensDataMax;
+int16_t actDeltaSensData;
+int16_t tresholdMin;
+int16_t tresholdMax;
+int16_t output;
+uint16_t calculationWeight(int16_t rawSensData, strSensorData sensorData) {
+	deltaSensDataMax = sensorData.LoadSensData - sensorData.UnloadSensData;
+
+	if (deltaSensDataMax < 0) {
+		deltaSensDataMax = -deltaSensDataMax;
+	}
+
+	actDeltaSensData = rawSensData - sensorData.UnloadSensData;
+
+	if (actDeltaSensData < 0) {
+		actDeltaSensData = -actDeltaSensData;
+	}
+
+	tresholdMin = sensorData.OffsetUnloadSensData;
+	tresholdMax = deltaSensDataMax - sensorData.OffsetLoadSensData;
+
+	output = (int16_t) ((int32_t) sensorData.WeightMax * (actDeltaSensData - tresholdMin) / (tresholdMax - tresholdMin));
+
+	if (output < 0) {
+		output = 0;
+	}
+
+	return output;
+}
 
 /* USER CODE END 4 */
 
