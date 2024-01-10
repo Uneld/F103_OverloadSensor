@@ -28,7 +28,24 @@
 #include "temp_sensor.h"
 #include "load_cell.h"
 #include "canHandler.h"
+#include "flash_func.h"
 /* USER CODE END Includes */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+extern uint32_t _app_addr;
+
+#define RX_SETTING_MODE 0x18FFBB33
+#define TX_SETTING_MODE 0x18FFCC33
+#define OFFSET_PERIOD_TRANSMIT 1
+#define SEMPLING_SENSDATA_LOAD_UNLOAD 20
+
+#define MIN_OFFSET_SENS_DATA 0
+#define MAX_OFFSET_SENS_DATA 32000
+#define MIN_OFFSET_WEIGHT 1
+#define MAX_OFFSET_WEIGHT 64000
+#define SIZE_FLASH_WRITE_DATA 64
+/* USER CODE END PD */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
@@ -87,7 +104,7 @@ typedef struct {
 
 typedef struct {
 	uint8_t CMD;
-	CAN_ID_UNION CanID;
+	uint32_t CanID;
 	uint8_t unused[3];
 } strSETTING_SET_CANID;
 
@@ -111,25 +128,16 @@ typedef struct {
 	uint16_t OffsetUnloadSensData;
 	uint16_t OffsetLoadSensData;
 	uint16_t WeightMax;
-
 } strSensorData;
+
+typedef union {
+	struct {
+		strSensorData SensData;
+	} Data;
+	uint8_t RawData[SIZE_FLASH_WRITE_DATA];
+} strWriteFlashData;
 #pragma pack()
 /* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-extern uint32_t _app_addr;
-
-#define RX_SETTING_MODE 0x18FFBB33
-#define TX_SETTING_MODE 0x18FFCC33
-#define OFFSET_PERIOD_TRANSMIT 1
-#define SEMPLING_SENSDATA_LOAD_UNLOAD 20
-
-#define MIN_OFFSET_SENS_DATA 0
-#define MAX_OFFSET_SENS_DATA 32000
-#define MIN_OFFSET_WEIGHT 1
-#define MAX_OFFSET_WEIGHT 64000
-/* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
@@ -155,7 +163,8 @@ CanCMD switchCanCMD = WAITING;
 
 uint16_t periodTransmit = 50;
 
-strSensorData sensorData;
+strSensorData sensorData, oldSensorData;
+uint8_t errorReadFlashSensorData;
 
 /* USER CODE END PV */
 
@@ -163,6 +172,9 @@ strSensorData sensorData;
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 uint16_t calculationWeight(int16_t rawSensData, strSensorData sensorData);
+void writeSensorData(strSensorData *sensorData);
+uint8_t readSensorData(strSensorData *sensorData);
+uint16_t getPeriodTransmit(EnumPeriodTransmitType *periodType);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -205,13 +217,16 @@ int main(void) {
 	canSetHWFlt(CAN_EXT, 1, CAN_RX_FIFO0, RX_SETTING_MODE, 0xFFFFFFFF);
 	errCodeStrtCAN = canStart();
 	init_conversion_tempSensor();
-	sensorData.TxCanID.CanID = 0x1CE75516;
 
+	sensorData.TxCanID.CanID = 0x1CE75516;
 	sensorData.WeightMax = 1000;
 	sensorData.OffsetLoadSensData = 400;
 	sensorData.OffsetUnloadSensData = 300;
 	sensorData.LoadSensData = 8300;
 	sensorData.UnloadSensData = -735;
+
+	errorReadFlashSensorData = readSensorData(&sensorData);
+	periodTransmit = getPeriodTransmit(&sensorData.PeriodTransmitType);
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -236,6 +251,7 @@ int main(void) {
 					switchCanCMD = WAITING;
 					settingTxBuff.CMD = ENTER_SETTING_MODE;
 					canTXMessage(CAN_EXT, TX_SETTING_MODE, 0, 8, (uint8_t*) &settingTxBuff);
+					oldSensorData = sensorData;
 				}
 			}
 			break;
@@ -252,42 +268,28 @@ int main(void) {
 
 				break;
 			case EXIT_SETTING_MODE:
+				uint8_t writeFlag = sensorData.LoadSensData != oldSensorData.LoadSensData || sensorData.OffsetLoadSensData != oldSensorData.OffsetLoadSensData
+						|| sensorData.OffsetUnloadSensData != oldSensorData.OffsetUnloadSensData
+						|| sensorData.PeriodTransmitType != oldSensorData.PeriodTransmitType || sensorData.TxCanID.CanID != oldSensorData.TxCanID.CanID
+						|| sensorData.UnloadSensData != oldSensorData.UnloadSensData || sensorData.WeightMax != oldSensorData.WeightMax;
+
+				if (writeFlag) {
+					writeSensorData(&sensorData);
+				}
 				switchMain = WORK;
 				settingTxBuff.CMD = EXIT_SETTING_MODE;
 
 				break;
 			case PERIOD_TRANSMIT:
-				EnumPeriodTransmitType periodType = ((strSETTING_SET_PERIOD*) settingRxBuff)->TYPE_PERIOD;
-				switch (periodType) {
-				case PER_10ms:
-					periodTransmit = 10;
-					break;
-				case PER_20ms:
-					periodTransmit = 20;
-					break;
-				case PER_50ms:
-					periodTransmit = 50;
-					break;
-				case PER_100ms:
-					periodTransmit = 100;
-					break;
-				case PER_1000ms:
-					periodTransmit = 1000;
-					break;
-				case PER_5000ms:
-					periodTransmit = 5000;
-					break;
-				default:
-					periodTransmit = 50;
-					break;
-				}
+				sensorData.PeriodTransmitType = ((strSETTING_SET_PERIOD*) settingRxBuff)->TYPE_PERIOD;
 
+				periodTransmit = getPeriodTransmit(&sensorData.PeriodTransmitType);
 				settingTxBuff.CMD = PERIOD_TRANSMIT;
 				switchCanCMD = WAITING;
 				break;
 			case CHANGE_CANID:
-				sensorData.TxCanID.CanID = ((strSETTING_SET_CANID*) settingRxBuff)->CanID.CanID;
-
+				uint32_t tempId = ((strSETTING_SET_CANID*) settingRxBuff)->CanID;
+				sensorData.TxCanID.CanID = ((tempId & 0xFF) << 24) | ((tempId & 0xFF00) << 8) | ((tempId & 0xFF0000) >> 8) | ((tempId & 0xFF000000) >> 24);
 				settingTxBuff.CMD = CHANGE_CANID;
 				switchCanCMD = WAITING;
 				break;
@@ -431,6 +433,65 @@ uint16_t calculationWeight(int16_t rawSensData, strSensorData sensorData) {
 	}
 
 	return output;
+}
+
+void writeSensorData(strSensorData *sensorData) {
+	strWriteFlashData writeSensData;
+	writeSensData.Data.SensData = *sensorData;
+
+	uint8_t *dataPointer = (uint8_t*) &writeSensData;
+	uint8_t checkSumm = 0;
+
+	for (uint32_t i = 0; i < (SIZE_FLASH_WRITE_DATA - 1); i++) {
+		checkSumm += ((uint8_t*) dataPointer)[i] * 41381;
+	}
+	writeSensData.RawData[SIZE_FLASH_WRITE_DATA - 1] = checkSumm;
+
+	flash_erase();
+	flash_program(PARAMETERS_PAGE_ADDRESS, (uint32_t*) (&writeSensData), SIZE_FLASH_WRITE_DATA);
+}
+
+uint8_t readSensorData(strSensorData *sensorData) {
+	strWriteFlashData *tmp = (strWriteFlashData*) PARAMETERS_PAGE_ADDRESS;
+	uint8_t *dataPointer = (uint8_t*) PARAMETERS_PAGE_ADDRESS;
+	uint8_t checkSumm = 0;
+
+	for (uint32_t i = 0; i < (SIZE_FLASH_WRITE_DATA - 1); i++) {
+		checkSumm += ((uint8_t*) dataPointer)[i] * 41381;
+	}
+
+	if (tmp->RawData[SIZE_FLASH_WRITE_DATA - 1] == checkSumm) {
+		*sensorData = tmp->Data.SensData;
+		return 0;
+	} else {
+		return 1;
+	}
+}
+
+uint16_t getPeriodTransmit(EnumPeriodTransmitType *periodType) {
+	switch (*periodType) {
+	case PER_10ms:
+		return 10;
+		break;
+	case PER_20ms:
+		return 20;
+		break;
+	case PER_50ms:
+		return 50;
+		break;
+	case PER_100ms:
+		return 100;
+		break;
+	case PER_1000ms:
+		return 1000;
+		break;
+	case PER_5000ms:
+		return 5000;
+		break;
+	default:
+		return 50;
+		break;
+	}
 }
 
 /* USER CODE END 4 */
