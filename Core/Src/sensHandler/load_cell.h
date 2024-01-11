@@ -12,5 +12,6 @@
 
 void setCountFltAvrLoad(uint8_t _countFltAvrLoad);
 int16_t proc_hx711_getValue();
+uint8_t getErrCommLoadAmp();
 
 #endif /* SRC_SENSHANDLER_LOAD_CELL_H_ */

@@ -35,8 +35,9 @@
 /* USER CODE BEGIN PD */
 extern uint32_t _app_addr;
 
-#define RX_SETTING_MODE 0x18FFBB33
-#define TX_SETTING_MODE 0x18FFCC33
+#define RX_SETTING_MODE 0x18FFBBEB
+#define TX_SETTING_MODE 0x18FFCCEB
+#define TX_ERROR 0x18FFDDEB
 #define OFFSET_PERIOD_TRANSMIT 1
 #define SEMPLING_SENSDATA_LOAD_UNLOAD 20
 
@@ -61,10 +62,11 @@ typedef enum {
 	CHANGE_CANID = 0x17,
 	SET_WITHOUT_LOAD = 0x18,
 	SET_WITH_LOAD = 0x19,
-	SET_OFFSET_LOAD = 0x20,
-	SET_OFFSET_UNLOAD = 0x21,
+	SET_OFFSET_UNLOAD = 0x20,
+	SET_OFFSET_LOAD = 0x21,
 	SET_MAX_WEIGHT = 0x22,
 	SET_COUNT_FLT_AVR_LOAD = 0x23,
+	SET_DEFAULT_VALUES = 0x24,
 	EXIT_SETTING_MODE = 0x25,
 	ERROR_CMD = 0xFF
 } CanCMD;
@@ -91,6 +93,16 @@ typedef union {
 	} Data;
 	uint8_t RawData[8];
 } OutData;
+
+typedef union {
+	struct {
+		uint8_t tempSRCHi;
+		uint8_t tempSRCLow;
+		uint8_t readFlashSensorData;
+		uint8_t commLoadAmp;
+	} Data;
+	uint8_t RawData[8];
+} strErrors;
 
 typedef struct {
 	uint8_t CMD;
@@ -163,6 +175,7 @@ uint32_t errCodeStrtCAN, errCodeTxCAN, errCodeRxCAN;
 CAN_RxHeaderTypeDef pRxHeader;
 uint8_t settingRxBuff[8] = { };
 strSETTING_CMD settingTxBuff = { 0xFF, { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF } };
+strErrors sendErrors;
 
 OutData outCanData;
 
@@ -176,6 +189,8 @@ uint8_t errorReadFlashSensorData;
 
 uint16_t deltaCountTxCan, oldCountTxCan;
 uint8_t flagSend;
+
+uint8_t countWork;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -185,6 +200,7 @@ uint16_t calculationWeight(int16_t rawSensData, strSensorData sensorData);
 void writeSensorData(strSensorData *sensorData);
 uint8_t readSensorData(strSensorData *sensorData);
 uint16_t getPeriodTransmit(EnumPeriodTransmitType *periodType);
+void setDefaultValues(strSensorData* sensorData);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -230,14 +246,7 @@ int main(void) {
 
 	errorReadFlashSensorData = readSensorData(&sensorData);
 	if (errorReadFlashSensorData) {
-		sensorData.TxCanID.CanID = 0x1CE75516;
-		sensorData.WeightMax = 1000;
-		sensorData.OffsetLoadSensData = 400;
-		sensorData.OffsetUnloadSensData = 300;
-		sensorData.LoadSensData = 8300;
-		sensorData.UnloadSensData = -735;
-		sensorData.CountFltAvrLoad = 2;
-		sensorData.PeriodTransmitType = 1;
+		setDefaultValues(&sensorData);
 	}
 
 	periodTransmit = getPeriodTransmit(&sensorData.PeriodTransmitType);
@@ -247,6 +256,7 @@ int main(void) {
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1) {
+		countWork++;
 		temperatureOut = proc_tempSensor();
 		outputLoadCell = proc_hx711_getValue();
 
@@ -300,7 +310,6 @@ int main(void) {
 						|| sensorData.UnloadSensData != oldSensorData.UnloadSensData
 						|| sensorData.WeightMax != oldSensorData.WeightMax
 						|| sensorData.CountFltAvrLoad != oldSensorData.CountFltAvrLoad;
-				;
 
 				if (writeFlag) {
 					writeSensorData(&sensorData);
@@ -385,9 +394,14 @@ int main(void) {
 				switchCanCMD = WAITING;
 			}
 				break;
+			case SET_DEFAULT_VALUES:{
+				setDefaultValues(&sensorData);
+				settingTxBuff.CMD = SET_DEFAULT_VALUES;
+				switchCanCMD = WAITING;
+			}
+			break;
 			default:
 				settingTxBuff.CMD = ERROR_CMD;
-
 				switchCanCMD = WAITING;
 				break;
 			}
@@ -396,6 +410,17 @@ int main(void) {
 				errCodeTxCAN = canTXMessage(CAN_EXT, TX_SETTING_MODE, 0, 8, (uint8_t*) &settingTxBuff);
 			}
 			break;
+		}
+
+		if (flagSend){
+			uint8_t flagErrPresent = errorReadFlashSensorData || getTempFlagErrorsPresent() || getErrCommLoadAmp();
+			if (flagErrPresent){
+				sendErrors.Data.readFlashSensorData = errorReadFlashSensorData;
+				sendErrors.Data.tempSRCHi = getTempErrSRCHi();
+				sendErrors.Data.tempSRCLow = getTempErrSRCLow();
+				sendErrors.Data.commLoadAmp = getErrCommLoadAmp();
+				errCodeTxCAN = canTXMessage(CAN_EXT, TX_ERROR, 0, 8, sendErrors.RawData);
+			}
 		}
 
 		/* USER CODE END WHILE */
@@ -529,6 +554,17 @@ uint16_t getPeriodTransmit(EnumPeriodTransmitType *periodType) {
 		return 50;
 		break;
 	}
+}
+
+void setDefaultValues(strSensorData* sensorData){
+	sensorData->TxCanID.CanID = 0x1CE75516;
+	sensorData->WeightMax = 1000;
+	sensorData->OffsetLoadSensData = 400;
+	sensorData->OffsetUnloadSensData = 300;
+	sensorData->LoadSensData = 8300;
+	sensorData->UnloadSensData = -735;
+	sensorData->CountFltAvrLoad = 2;
+	sensorData->PeriodTransmitType = 1;
 }
 
 /* USER CODE END 4 */

@@ -8,13 +8,18 @@
 #include "load_cell.h"
 #include "delay_user.h"
 
+#define TIME_CHECK_COMMUNICATION 1000
+
 uint8_t countFltAvrLoad = 2;
+uint8_t errCommLoadAmp;
+
 
 void setCountFltAvrLoad(uint8_t _countFltAvrLoad){
 	countFltAvrLoad = _countFltAvrLoad;
 }
 
 int16_t proc_hx711_getValue() {
+	static uint16_t deltaTimeMs, oldTimeMs;
 	static uint8_t switchGetData = 0;
 	static uint32_t startTime = 0;
 	static uint32_t outData = 0;
@@ -29,6 +34,7 @@ int16_t proc_hx711_getValue() {
 	case 1:
 		uint32_t currentTime = HAL_GetTick();
 		if (currentTime - startTime > 400) {
+			oldTimeMs = HAL_GetTick();
 			switchGetData = 2;
 		}
 		break;
@@ -37,8 +43,16 @@ int16_t proc_hx711_getValue() {
 			switchGetData = 3;
 			outData = 0;
 		}
+
+		deltaTimeMs = HAL_GetTick() - oldTimeMs;
+		if (deltaTimeMs > TIME_CHECK_COMMUNICATION) {
+			errCommLoadAmp = 1;
+		}
+
 		break;
 	case 3:
+		errCommLoadAmp = 0;
+
 		for (uint8_t i = 0; i < 24; i++) {
 			HX711_SCK_GPIO_Port->BSRR = HX711_SCK_Pin;
 
@@ -66,8 +80,14 @@ int16_t proc_hx711_getValue() {
 		HX711_SCK_GPIO_Port->BRR = HX711_SCK_Pin;
 
 		switchGetData = 2;
+
+		oldTimeMs = HAL_GetTick();
 		break;
 	}
 
 	return outDataInt16;
+}
+
+uint8_t getErrCommLoadAmp(){
+	return errCommLoadAmp;
 }
