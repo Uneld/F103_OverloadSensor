@@ -8,7 +8,11 @@
 #include "load_cell.h"
 #include "delay_user.h"
 
-#define COUNT_FLT_AVR_LOAD 2
+uint8_t countFltAvrLoad = 2;
+
+void setCountFltAvrLoad(uint8_t _countFltAvrLoad){
+	countFltAvrLoad = _countFltAvrLoad;
+}
 
 int16_t proc_hx711_getValue() {
 	static uint8_t switchGetData = 0;
@@ -45,8 +49,8 @@ int16_t proc_hx711_getValue() {
 			outData = (outData << 1) + ((HX711_DT_GPIO_Port->IDR & HX711_DT_Pin) != 0);
 		}
 
-		if (countDiv > COUNT_FLT_AVR_LOAD) {
-			outDataInt16 = summAvrLoad / COUNT_FLT_AVR_LOAD;
+		if (countDiv > countFltAvrLoad) {
+			outDataInt16 = summAvrLoad / countFltAvrLoad;
 			countDiv = 0;
 			summAvrLoad = 0;
 		}
