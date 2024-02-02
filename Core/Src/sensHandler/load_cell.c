@@ -27,16 +27,18 @@ int16_t proc_hx711_getValue() {
 	static int16_t outDataInt16;
 
 	switch (switchGetData) {
-	case 0:
+	case 0:{
 		startTime = HAL_GetTick();
 		switchGetData = 1;
+	}
 		break;
-	case 1:
+	case 1:{
 		uint32_t currentTime = HAL_GetTick();
 		if (currentTime - startTime > 400) {
 			oldTimeMs = HAL_GetTick();
 			switchGetData = 2;
 		}
+	}
 		break;
 	case 2:
 		if ((HX711_DT_GPIO_Port->IDR & (HX711_DT_Pin)) == 0) {
