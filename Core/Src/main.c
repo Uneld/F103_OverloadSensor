@@ -25,6 +25,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+//#define GEN_8MGZ_TEST
+
+
 #include "temp_sensor.h"
 #include "load_cell.h"
 #include "canHandler.h"
@@ -85,7 +88,7 @@ typedef union {
 typedef union {
 	struct {
 		int32_t DataRaw;
-		int16_t DataWeight;
+		uint16_t DataWeight;
 		int16_t Temperature;
 	} Data;
 	uint8_t RawData[8];
@@ -454,6 +457,8 @@ int main(void)
   */
 void SystemClock_Config(void)
 {
+
+
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
   RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
@@ -463,7 +468,11 @@ void SystemClock_Config(void)
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+#ifdef GEN_8MGZ_TEST
+  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
+#else
   RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV2;
+#endif
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
@@ -496,28 +505,32 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 uint16_t calculationWeight(int16_t rawSensData, strSensorData sensorData) {
-	int16_t deltaSensDataMax = sensorData.LoadSensData - sensorData.UnloadSensData;
+	int32_t deltaSensDataMax = sensorData.LoadSensData - sensorData.UnloadSensData;
 
 	if (deltaSensDataMax < 0) {
 		deltaSensDataMax = -deltaSensDataMax;
 	}
 
-	int16_t actDeltaSensData = rawSensData - sensorData.UnloadSensData;
+	int32_t actDeltaSensData = rawSensData - sensorData.UnloadSensData;
 
 	if (actDeltaSensData < 0) {
 		actDeltaSensData = -actDeltaSensData;
 	}
 
-	int16_t tresholdMin = sensorData.OffsetUnloadSensData;
-	int16_t tresholdMax = deltaSensDataMax - sensorData.OffsetLoadSensData;
+	int32_t tresholdMin = sensorData.OffsetUnloadSensData;
+	int32_t tresholdMax = deltaSensDataMax - sensorData.OffsetLoadSensData;
 
-	int16_t output = (int16_t) ((int32_t) sensorData.WeightMax * (actDeltaSensData - tresholdMin) / (tresholdMax - tresholdMin));
+	int32_t output = ((int32_t) sensorData.WeightMax * (actDeltaSensData - tresholdMin) / (tresholdMax - tresholdMin));
 
 	if (output < 0) {
 		output = 0;
 	}
 
-	return output;
+	if (output > 64000) {
+		output = 64000;
+	}
+
+	return (uint16_t) output;
 }
 
 void writeSensorData(strSensorData *sensorData) {
