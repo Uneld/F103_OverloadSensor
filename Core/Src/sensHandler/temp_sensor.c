@@ -40,7 +40,7 @@ float proc_tempSensor() {
 
 	temperature = (165 * adc_ch - 102380) / 2048;
 
-	if (countDiv > COUNT_FLT_AVR_TEMP) {
+	if (countDiv >= COUNT_FLT_AVR_TEMP) {
 		valAvrTemp = summAvrTemp / COUNT_FLT_AVR_TEMP;
 		countDiv = 0;
 		summAvrTemp = 0;
